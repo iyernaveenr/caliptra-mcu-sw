@@ -426,6 +426,15 @@ fn reg_access_test() {
             mcu_fw_image: Some(&binaries.mcu_runtime),
             fuses: Fuses {
                 fuse_pqc_key_type: FwVerificationPqcKeyType::LMS as u32,
+                vendor_pk_hash: {
+                    let mut vendor_pk_hash = [0u32; 12];
+                    binaries.vendor_pk_hash().unwrap().chunks(4).enumerate().for_each(|(i, chunk)| {
+                        let mut array = [0u8; 4];
+                        array.copy_from_slice(chunk);
+                        vendor_pk_hash[i] = u32::from_le_bytes(array);
+                    });
+                    vendor_pk_hash
+                },
                 ..Default::default()
             },
             ..Default::default()
