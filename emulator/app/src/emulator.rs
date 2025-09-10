@@ -751,7 +751,8 @@ impl Emulator {
         )?;
         #[cfg(any(
             feature = "test-mcu-mbox-soc-requester-loopback",
-            feature = "test-mcu-mbox-usermode"
+            feature = "test-mcu-mbox-usermode",
+            feature = "test-mcu-mbox-cmds",
         ))]
         let ext_mcu_mailbox0 = mcu_mailbox0.as_external(MciMailboxRequester::SocAgent(1));
         let mci = Mci::new(
@@ -860,7 +861,8 @@ impl Emulator {
 
         #[cfg(any(
             feature = "test-mcu-mbox-soc-requester-loopback",
-            feature = "test-mcu-mbox-usermode"
+            feature = "test-mcu-mbox-usermode",
+            feature = "test-mcu-mbox-cmds",
         ))]
         {
             const SOC_AGENT_ID: u32 = 0x1;
