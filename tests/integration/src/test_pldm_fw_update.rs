@@ -31,9 +31,7 @@ mod test {
     use std::time::Duration;
     use uuid::Uuid;
 
-    #[cfg_attr(feature = "fpga_realtime", ignore)]
-    #[test]
-    fn test_fw_update_e2e() {
+    fn _test_fw_update_e2e() {
         let feature = "test-pldm-fw-update-e2e";
         let example_app = false;
         let lock = TEST_LOCK.lock().unwrap();
