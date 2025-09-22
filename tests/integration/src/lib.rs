@@ -93,6 +93,7 @@ mod test {
             None,
             Some(&mcu_config_emulator::flash::LOGGING_FLASH_CONFIG),
             None,
+            false,
         )
         .expect("Runtime build failed");
         assert!(output.exists());
@@ -573,6 +574,7 @@ mod test {
                 }
                 .as_bytes(),
             ),
+            true,
         )
         .expect("Runtime build failed");
         assert!(test_runtime.exists());

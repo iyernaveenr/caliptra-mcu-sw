@@ -390,6 +390,7 @@ fn main() {
                     _ => panic!("Unsupported platform"),
                 },
                 None,
+                false,
             )
             .map(|_| ())
         }

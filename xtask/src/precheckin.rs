@@ -19,6 +19,7 @@ pub(crate) fn precheckin() -> Result<()> {
         None,
         None,
         None,
+        false,
     )?;
     mcu_builder::runtime_build_with_apps_cached(
         &[],
@@ -31,6 +32,7 @@ pub(crate) fn precheckin() -> Result<()> {
         None,
         None,
         None,
+        true,
     )?;
     crate::test::test_panic_missing()?;
     Ok(())
