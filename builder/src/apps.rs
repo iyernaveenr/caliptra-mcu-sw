@@ -187,7 +187,7 @@ fn app_build(
 /* Licensed under the Apache-2.0 license */
 TBF_HEADER_SIZE = 0x{:x};
 FLASH_START = 0x{:x};
-FLASH_LENGTH = 0x4a900;
+FLASH_LENGTH = 0x4a500;
 RAM_START = 0x{:x};
 RAM_LENGTH = 0x{:x};
 INCLUDE platforms/emulator/runtime/userspace/apps/app_layout.ld",
