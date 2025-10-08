@@ -78,30 +78,7 @@ pub fn apps_build_flat_tbf(
             bail!("Unknown platform: {}", platform);
         }
     };
-    for app in apps.iter() {
-        if app.name == "example-app" && !example_app {
-            continue;
-        }
-        println!("Building TBF for app {}", app.name);
-        let app_bin = app_build_tbf(
-            app,
-            platform,
-            offset,
-            ram_start,
-            app.minimum_ram as usize,
-            features,
-        )?;
-        bin.extend_from_slice(&app_bin);
-        offset += app_bin.len();
-        ram_start += app.minimum_ram as usize;
 
-        if app.name == "example-app" && example_app {
-            // example app is always the first app
-            // and we do not want to build any more apps after it
-            // so we can just break out of the loop
-            break;
-        }
-    }
     // align to 4-byte boundary for PMP
     while bin.len() % 4 != 0 {
         bin.push(0);

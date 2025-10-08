@@ -284,6 +284,16 @@ pub unsafe fn main() {
     #[allow(static_mut_refs)]
     romtime::set_exiter(&mut FPGA_EXITER);
 
+    if true {
+        // Disable WDT1 before running the loop
+        let mci: StaticRef<mci::regs::Mci> =
+            unsafe { StaticRef::new(MCU_MEMORY_MAP.mci_offset as *const mci::regs::Mci) };
+        let mci_wdt = romtime::Mci::new(mci);
+        mci_wdt.disable_wdt();
+        print_to_console("[mcu-runtime] Successfully updated MCU Runtime FW\n");
+        romtime::test_exit(0);
+    }    
+
     // Set up memory protection immediately after setting the trap handler, to
     // ensure that much of the board initialization routine runs with ePMP
     // protection.
