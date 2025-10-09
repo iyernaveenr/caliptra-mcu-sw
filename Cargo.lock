@@ -2885,6 +2885,7 @@ dependencies = [
  "kernel",
  "mcu-components",
  "mcu-config",
+ "mcu-config-emulator",
  "mcu-config-fpga",
  "mcu-mbox-driver",
  "mcu-platforms-common",

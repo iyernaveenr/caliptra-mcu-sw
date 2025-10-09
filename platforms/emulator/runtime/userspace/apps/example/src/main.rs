@@ -7,7 +7,7 @@
 
 use core::fmt::Write;
 //#[cfg(feature = "test-flash-usermode")]
-#[cfg(any(feature = "test-flash-usermode", feature = "test-mm-flash-ctrl"))]
+//#[cfg(any(feature = "test-flash-usermode", feature = "test-mm-flash-ctrl"))]
 use libsyscall_caliptra::flash::{FlashCapacity, SpiFlash};
 use libsyscall_caliptra::system::System;
 use libtock::alarm::*;
@@ -87,6 +87,11 @@ async fn start() {
 #[allow(unreachable_code)]
 pub(crate) async fn async_main<S: Syscalls>() {
     let mut console_writer = Console::<S>::writer();
+     writeln!(
+        console_writer,
+        "[xs debug]example_app: entering",
+    )
+    .unwrap();
     writeln!(
         console_writer,
         "Timer frequency: {}",
@@ -272,13 +277,13 @@ pub(crate) async fn async_main<S: Syscalls>() {
         System::exit(0);
     }
 
-    #[cfg(feature = "test-mm-flash-ctrl")]
+    //#[cfg(feature = "test-mm-flash-ctrl")]
     {
         use mcu_config_emulator::flash::STAGING_PARTITION;
 
         writeln!(
             console_writer,
-            "[xs debug]PLACEHOLDER Running mm_flash_ctrl user mode test"
+            "[xs debug]Running mm_flash_ctrl user mode test"
         )
         .unwrap();
 
@@ -313,7 +318,7 @@ pub(crate) async fn async_main<S: Syscalls>() {
         System::exit(0);
     }
 
-    writeln!(console_writer, "app finished").unwrap();
+    writeln!(console_writer, "[xs debug]example_app finished").unwrap();
 }
 
 #[allow(dead_code)]
@@ -341,7 +346,7 @@ async fn test_mctp_loopback() {
     }
 }
 
-#[cfg(any(feature = "test-flash-usermode", feature = "test-mm-flash-ctrl"))]
+//#[cfg(any(feature = "test-flash-usermode", feature = "test-mm-flash-ctrl"))]
 pub mod flash_test {
     use super::*;
     pub const BUF_LEN: usize = 1024;
