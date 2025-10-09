@@ -32,7 +32,7 @@ mod fpga_regs;
 // pub mod lcc;
 mod mcu_mgr;
 mod model_emulated;
-#[cfg(feature = "fpga_realtime")]
+//#[cfg(feature = "fpga_realtime")]
 mod model_fpga_realtime;
 mod otp_provision;
 mod vmem;

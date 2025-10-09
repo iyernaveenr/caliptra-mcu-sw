@@ -281,7 +281,7 @@ pub fn all_build(args: AllBuildArgs) -> Result<()> {
         mcu_cfg.clone(),
         None,
     );
-    let caliptra_rom = caliptra_builder.get_caliptra_rom()?;
+//    let caliptra_rom = caliptra_builder.get_caliptra_rom()?;
     let caliptra_fw = caliptra_builder.get_caliptra_fw()?;
     let vendor_pk_hash = caliptra_builder.get_vendor_pk_hash()?.to_string();
     println!("Vendor PK hash: {:x?}", vendor_pk_hash);
@@ -340,7 +340,7 @@ pub fn all_build(args: AllBuildArgs) -> Result<()> {
 
         let mut caliptra_builder = crate::CaliptraBuilder::new(
             fpga,
-            Some(caliptra_rom.clone()),
+            None,
             Some(caliptra_fw.clone()),
             None,
             Some(vendor_pk_hash.clone()),
@@ -405,13 +405,14 @@ pub fn all_build(args: AllBuildArgs) -> Result<()> {
         .compression_method(zip::CompressionMethod::Deflated)
         .unix_permissions(0o644)
         .last_modified_time(zip::DateTime::try_from(chrono::Local::now().naive_local())?);
-
+/*
     add_to_zip(
         &caliptra_rom,
         FirmwareBinaries::CALIPTRA_ROM_NAME,
         &mut zip,
         options,
     )?;
+    */
     add_to_zip(
         &caliptra_fw,
         FirmwareBinaries::CALIPTRA_FW_NAME,

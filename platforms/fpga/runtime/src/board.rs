@@ -110,7 +110,7 @@ const FAULT_RESPONSE: capsules_system::process_policies::PanicFaultPolicy =
 /// Dummy buffer that causes the linker to reserve enough space for the stack.
 #[no_mangle]
 #[link_section = ".stack_buffer"]
-pub static mut STACK_MEMORY: [u8; 0x2000] = [0; 0x2000];
+pub static mut STACK_MEMORY: [u8; 0x1000] = [0; 0x1000];
 #[no_mangle]
 pub static mut PIC: Pic = Pic::new(MCU_MEMORY_MAP.pic_offset);
 
@@ -283,6 +283,16 @@ pub unsafe fn main() {
     romtime::set_printer(&mut FPGA_WRITER);
     #[allow(static_mut_refs)]
     romtime::set_exiter(&mut FPGA_EXITER);
+
+    if true {
+        // Disable WDT1 before running the loop
+        let mci: StaticRef<mci::regs::Mci> =
+            unsafe { StaticRef::new(MCU_MEMORY_MAP.mci_offset as *const mci::regs::Mci) };
+        let mci_wdt = romtime::Mci::new(mci);
+        mci_wdt.disable_wdt();
+        print_to_console("[mcu-runtime] Successfully updated MCU Runtime FW\n");
+        romtime::test_exit(0);
+    }        
 
     // Set up memory protection immediately after setting the trap handler, to
     // ensure that much of the board initialization routine runs with ePMP

@@ -444,7 +444,7 @@ pub fn runtime_build_with_apps_cached(
     let kernel_size = bin.len();
     println!("Kernel binary built: {} bytes", kernel_size);
 
-    bin.extend_from_slice(vec![0; padding].as_slice());
+//    bin.extend_from_slice(vec![0; padding].as_slice());
     bin.extend_from_slice(&apps_bin);
     // Ensure that runtime binary is a multiple of 256 bytes.
     // This is needed to load into the recovery interface efficiently.
