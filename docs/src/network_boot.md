@@ -2,18 +2,18 @@
 
 ## Overview
 
-This document outlines the design for a lightweight network boot utility for the Caliptra subsystem, similar to PXE boot functionality. The system enables the Caliptra SS to download firmware images over the network through a dedicated Network Boot Coprocessor within a ROM environment.
+This document outlines the design for a lightweight network boot utility for the Caliptra subsystem, similar to PXE boot functionality. The system enables the Caliptra SS to download firmware images over the network through a dedicated Network Boot ROM within a ROM environment.
 
-The network boot coprocessor acts as an intermediary between remote image servers and the Caliptra SS, handling network communications including DHCP configuration, TFTP server discovery, and firmware image downloads. The system supports downloading multiple firmware components including Caliptra FMC+RT images, SoC manifests, and MCU runtime images through a firmware ID-based mapping system.
+The Network Boot ROM acts as an intermediary between remote image servers and the Caliptra SS, handling network communications including DHCP configuration, TFTP server discovery, and firmware image downloads. The system supports downloading multiple firmware components including Caliptra FMC+RT images, SoC manifests, and MCU runtime images through a firmware ID-based mapping system.
 
 ## System Architecture
 
 ```mermaid
 flowchart LR
     A["Image Server<br/>───────────<br/>• Image Store<br/>• DHCP<br/>• TFTP server<br/>• Config File"]
-    B["Network Boot Coprocessor<br/>───────────────<br/>Network Stack<br/>• DHCP<br/>• TFTP client<br/>• FW ID Mapping"]
+    B["Network Boot ROM <br/>───────────────<br/>Network Stack<br/>• DHCP<br/>• TFTP client<br/>• FW ID Mapping"]
     C["Caliptra SS<br/>─────────────<br/>• MCU<br/>• Caliptra Core"]
-    
+
     A <--> B
     B <--> C
 ```
@@ -23,61 +23,59 @@ flowchart LR
 The following diagram illustrates the high-level flow of the network boot process from initialization to image delivery:
 
 ```mermaid
-sequenceDiagram
-    participant IS as Image Server
-    participant NBC as Network Boot Coprocessor
-    participant CS as Caliptra SS
 
-    Note over CS: System Initialization
-    CS->>NBC: Start network boot discovery
-    
-    Note over NBC: Network Discovery
-    NBC->>IS: DHCP Discovery
-    IS-->>NBC: DHCP Offer (IP + Boot Server)
-    NBC->>IS: TFTP server discovery
-    IS-->>NBC: TFTP server ready
-    NBC->>IS: TFTP GET config file
-    IS-->>NBC: Config file (FW ID mappings)
-    NBC->>NBC: Store FW ID to filename mappings
-    NBC-->>CS: Network boot available
-    
-    Note over CS: Firmware Download Requests
-    CS->>NBC: download_image(firmware_id=0) # Caliptra FMC+RT
-    NBC->>IS: TFTP GET mapped filename
-    loop Image Transfer - Caliptra FMC+RT
-        IS-->>NBC: Image chunk
-        NBC-->>CS: Forward image chunk
-        CS-->>NBC: Chunk ACK
+sequenceDiagram
+    participant Caliptra Recovery I/F
+    participant MCU ROM
+    participant Network ROM
+    participant Image Server
+
+    %% --- Initialization ---
+    Note over MCU ROM: SoC initializaton
+    Note over MCU ROM,Image Server: Prepare network recovery
+    MCU ROM->>Network ROM: Initiate network boot
+
+    %% --- Network Discovery ---
+    Network ROM->>Image Server: DHCP Discovery
+    Image Server-->>Network ROM: DHCP Offer
+    Network ROM->>Image Server: TFTP server discovery
+    Image Server-->>Network ROM: TFTP server ready
+    Network ROM->>Image Server: TFTP GET config file (ToC)
+    Image Server-->>Network ROM: ToC (FW ID mappings)
+    Network ROM->>Network ROM: Store FW ID to filename mappings
+    Network ROM->>MCU ROM: Network boot available
+
+    Note over Caliptra Recovery I/F,Image Server:Download recovery images from network and push to Caliptra Recovery I/F
+
+    %% --- Image Transfer Loop ---
+    loop For each image id<br>(0: Caliptra Core FW, 1: SOC Manifest, 2: MCU Runtime)
+        MCU ROM->>Caliptra Recovery I/F: Polling for recovery readiness
+        Caliptra Recovery I/F-->>MCU ROM: Awaiting recover image id = {0, 1, 2)
+        MCU ROM->>Network ROM: Request image info (id)
+        Network ROM-->>MCU ROM: Image info (size, metadata)
+        MCU ROM->>Caliptra Recovery I/F: Set image size to control register (INDIRECT_FIFO_CTRL.write)
+        MCU ROM->>Network ROM: Request image download (id)
+        Network ROM->>Image Server: TFTP GET image
+        loop Image transfer by chunk
+            Image Server-->>Network ROM: Image chunk
+            Network ROM-->>MCU ROM: Forward image chunk
+            MCU ROM->>Caliptra Recovery I/F: Write chunk
+            MCU ROM->>Network ROM: Chunk ACK
+        end
     end
-    
-    CS->>NBC: download_image(firmware_id=1) # SoC Manifest
-    NBC->>IS: TFTP GET mapped filename
-    loop Image Transfer - SoC Manifest
-        IS-->>NBC: Image chunk
-        NBC-->>CS: Forward image chunk
-        CS-->>NBC: Chunk ACK
-    end
-    
-    CS->>NBC: download_image(firmware_id=2) # MCU RT Image
-    NBC->>IS: TFTP GET mapped filename
-    loop Image Transfer - MCU RT
-        IS-->>NBC: Image chunk
-        NBC-->>CS: Forward image chunk
-        CS-->>NBC: Chunk ACK
-    end
-    
-    Note over CS: Image Processing & Boot
-    CS->>CS: Validate and load all images
-    CS->>CS: Boot system with downloaded images
+
+    %% --- Finalization ---
+    MCU ROM->>Caliptra Recovery I/F: Finalize recovery
+
 ```
 
 ## Protocol Support
 
-The network boot coprocessor supports a minimal set of protocols optimized for the Caliptra ROM environment:
+The Network Boot ROM supports a minimal set of protocols optimized for the Caliptra ROM environment:
 
 ### DHCP (Dynamic Host Configuration Protocol)
 - **Purpose**: Automatic network configuration
-- **Advantages**: 
+- **Advantages**:
   - Standard network configuration protocol
   - Minimal overhead for basic IP assignment
   - Simple UDP-based protocol
@@ -85,19 +83,20 @@ The network boot coprocessor supports a minimal set of protocols optimized for t
 
 ### TFTP (Trivial File Transfer Protocol)
 - **Purpose**: Lightweight file transfer for firmware images
-- **Advantages**: 
+- **Advantages**:
   - Extremely lightweight - minimal overhead perfect for ROM environments
   - Simple UDP-based protocol - easy to implement securely
   - Small code footprint (~5-10KB implementation)
   - Standard protocol for network boot scenarios
 - **Implementation**: Client-side TFTP for firmware image download
-## Network Boot Coprocessor Interface Design
 
-The Network Boot Coprocessor provides a simple interface for the Caliptra SS to request firmware images over the network.
+## Network Boot ROM Interface Design
+
+The Network Boot ROM provides a simple interface for the Caliptra SS to request firmware images over the network.
 
 ### Core Functions
 
-The Network Boot Coprocessor implements the following core functions:
+The Network Boot ROM implements the following core functions:
 
 #### Network Discovery
 - **DHCP Configuration**: Automatically configure network interface using DHCP
@@ -115,20 +114,20 @@ The Network Boot Coprocessor implements the following core functions:
 - **ID 1**: SoC Manifest
 - **ID 2**: MCU RT image
 
-### Network Boot Coprocessor Interface
+### Network Boot ROM Interface
 
 ```rust
-/// Network Boot Coprocessor interface for Caliptra SS
+/// Network Boot ROM interface for Caliptra SS
 pub trait NetworkBootCoprocessor {
     type Error;
-    
+
     /// Start network boot discovery process
     /// This will perform DHCP, discover TFTP server, and download configuration
     fn start_network_boot_discovery(&mut self) -> Result<NetworkBootStatus, Self::Error>;
-    
+
     /// Download firmware image by ID
     fn download_image(&mut self, firmware_id: FirmwareId) -> Result<ImageStream, Self::Error>;
-    
+
     /// Get network status and configuration
     fn get_network_status(&self) -> Result<NetworkStatus, Self::Error>;
 }
@@ -165,7 +164,7 @@ pub struct FirmwareMappings {
 #[derive(Debug, Clone)]
 pub struct NetworkConfig {
     pub ip_address: IpAddr,
-    pub netmask: IpAddr, 
+    pub netmask: IpAddr,
     pub gateway: Option<IpAddr>,
     pub tftp_server: IpAddr,
 }
@@ -182,10 +181,10 @@ pub struct NetworkStatus {
 pub trait ImageStream {
     /// Read next chunk of image data
     fn read_chunk(&mut self, buffer: &mut [u8]) -> Result<usize, Error>;
-    
+
     /// Get total image size if known
     fn total_size(&self) -> Option<u64>;
-    
+
     /// Check if stream is complete
     fn is_complete(&self) -> bool;
 }
@@ -198,26 +197,26 @@ pub trait ImageStream {
 fn perform_network_boot(&mut self) -> Result<(), Error> {
     // 1. Start network boot discovery
     let boot_status = self.network_boot.start_network_boot_discovery()?;
-    
+
     if !boot_status.network_ready || !boot_status.config_downloaded {
         return Err(Error::NetworkBootNotAvailable);
     }
-    
+
     // 2. Download Caliptra FMC+RT image
     let mut caliptra_stream = self.network_boot.download_image(FirmwareId::CaliptraFmcRt)?;
     self.load_image_stream(caliptra_stream, ImageDestination::CaliptraCore)?;
-    
+
     // 3. Download SoC Manifest
     let mut manifest_stream = self.network_boot.download_image(FirmwareId::SocManifest)?;
     self.load_image_stream(manifest_stream, ImageDestination::SocManifest)?;
-    
+
     // 4. Download MCU RT image
     let mut mcu_stream = self.network_boot.download_image(FirmwareId::McuRt)?;
     self.load_image_stream(mcu_stream, ImageDestination::McuRuntime)?;
-    
+
     // 5. Validate and boot all images
     self.validate_and_boot_images()?;
-    
+
     Ok(())
 }
 
@@ -235,13 +234,13 @@ fn load_image_stream(&mut self, mut stream: ImageStream, dest: ImageDestination)
 
 ### Configuration File Format
 
-The network boot coprocessor downloads a configuration file that maps firmware IDs to filenames:
+The Network Boot ROM downloads a configuration file that maps firmware IDs to filenames:
 
 ```json
 {
     "firmware_mappings": {
         "0": "caliptra-fmc-rt-v1.2.3.bin",
-        "1": "soc-manifest-v2.1.0.bin", 
+        "1": "soc-manifest-v2.1.0.bin",
         "2": "mcu-runtime-v3.0.1.bin"
     }
 }
@@ -249,12 +248,12 @@ The network boot coprocessor downloads a configuration file that maps firmware I
 
 ## Network Stack Implementation
 
-For the Network Boot Coprocessor implementation, we need a minimal network stack that supports DHCP and TFTP while meeting the constraints of a ROM environment.
+For the Network Boot ROM implementation, we need a minimal network stack that supports DHCP and TFTP while meeting the constraints of a ROM environment.
 
 ### Option 1: lwIP (Lightweight IP) with Rust Bindings
 
-**Repository**: https://git.savannah.nongnu.org/cgit/lwip.git (upstream C)  
-**Rust Bindings**: https://github.com/embassy-rs/lwip (Embassy lwIP bindings)  
+**Repository**: https://git.savannah.nongnu.org/cgit/lwip.git (upstream C)
+**Rust Bindings**: https://github.com/embassy-rs/lwip (Embassy lwIP bindings)
 
 **Description**: Mature, lightweight TCP/IP stack originally written in C with Rust FFI bindings.
 
@@ -274,7 +273,7 @@ For the Network Boot Coprocessor implementation, we need a minimal network stack
 
 ### Option 2: smoltcp + Custom TFTP
 
-**Core**: https://github.com/smoltcp-rs/smoltcp (0BSD License)  
+**Core**: https://github.com/smoltcp-rs/smoltcp (0BSD License)
 **TFTP**: Custom implementation on UDP
 
 **Description**: Pure Rust network stack with custom TFTP implementation for minimal footprint.
@@ -293,7 +292,7 @@ For the Network Boot Coprocessor implementation, we need a minimal network stack
 
 **Required Protocol Support**:
 - ✅ UDP sockets (smoltcp)
-- ✅ DHCP client (smoltcp) 
+- ✅ DHCP client (smoltcp)
 - ⚠️ TFTP (custom implementation required)
 
 ### Recommended Approach
@@ -308,7 +307,7 @@ For the Network Boot Coprocessor implementation, we need a minimal network stack
 
 **Implementation Strategy**:
 1. **Phase 1**: Implement core UDP networking with smoltcp
-2. **Phase 2**: Add DHCP client functionality  
+2. **Phase 2**: Add DHCP client functionality
 3. **Phase 3**: Implement lightweight TFTP client for firmware downloads
 
 **Protocol Implementation Order**:
@@ -316,4 +315,16 @@ For the Network Boot Coprocessor implementation, we need a minimal network stack
 2. **DHCP Client**: Automatic network configuration
 3. **TFTP Client**: Firmware image download capability
 
+---
 
+## MCU ROM <--> Network ROM Messaging Protocol
+The messaging protocol between the MCU ROM and Network Boot ROM is designed to be transport agnostic, enabling flexible integration over various interconnects such as MMIO, mailbox, or shared memory. Messages are exchanged in a request-response pattern, with well-defined fields and status codes, allowing reliable coordination of network boot operations regardless of the underlying transport mechanism. This abstraction ensures compatibility with diverse hardware platforms and simplifies protocol implementation.
+
+
+| Message Name                   | Direction (MCU ROM → Network ROM) | Fields Sent by MCU ROM                | Purpose / Expected Response                |
+|------------------------------- |-----------------------------------|---------------------------------------|--------------------------------------------|
+| Network Boot Discovery Request | MCU ROM → Network ROM             | —                                     | Initiate network boot; triggers network setup and config download. Response: Network Boot Discovery Status. |
+| Image Info Request             | MCU ROM → Network ROM             | firmware_id                           | Request image metadata (size, version, etc.) for given firmware ID. Response: Image Info Response. |
+| Image Download Request         | MCU ROM → Network ROM             | firmware_id                           | Request download of image for given firmware ID. Response: Image Chunk stream. |
+| Chunk ACK                      | MCU ROM → Network ROM             | firmware_id, offset                   | Acknowledge receipt of image chunk; allows next chunk to be sent. No explicit response. |
+| Boot Complete / Error          | MCU ROM → Network ROM             | status (Success/Error), error_code    | Notify completion or error in boot process. No explicit response. |
