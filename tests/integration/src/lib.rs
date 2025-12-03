@@ -8,6 +8,7 @@ mod rom;
 mod test_dot;
 mod test_firmware_update;
 mod test_mctp_capsule_loopback;
+mod test_mm_flash_ctrl;
 mod test_pldm_fw_update;
 mod test_soc_boot;
 
@@ -589,6 +590,9 @@ mod test {
     run_test!(test_mbox_sram, example_app);
 
     run_test!(test_warm_reset, example_app);
+
+    // Move to HW model test
+    // run_test!(test_mm_flash_ctrl, example_app);
 
     /// This tests a full active mode boot run through with Caliptra, including
     /// loading MCU's firmware from Caliptra over the recovery interface.
