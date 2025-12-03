@@ -962,6 +962,7 @@ dependencies = [
  "capsules-core",
  "capsules-extra",
  "doe-transport",
+ "flash-driver",
  "i3c-driver",
  "kernel",
  "mcu-mbox-comm",
@@ -1866,6 +1867,7 @@ dependencies = [
  "libtock_unittest",
  "libtockasync",
  "mcu-config-emulator",
+ "mcu-config-fpga",
  "pldm-common",
  "portable-atomic",
  "romtime",
@@ -1912,6 +1914,16 @@ dependencies = [
  "sha2",
  "sha3",
  "zeroize",
+]
+
+[[package]]
+name = "flash-ctrl-emulator"
+version = "0.1.0"
+dependencies = [
+ "capsules-core",
+ "kernel",
+ "registers-generated",
+ "romtime",
 ]
 
 [[package]]
@@ -2865,6 +2877,7 @@ dependencies = [
  "components",
  "dma-driver",
  "doe-transport",
+ "flash-driver",
  "i3c-driver",
  "kernel",
  "mcu-config",
@@ -2952,6 +2965,7 @@ dependencies = [
  "poll-common",
  "rand 0.8.5",
  "registers-generated",
+ "romtime",
  "semver",
  "sha2",
  "sha3",
@@ -3124,6 +3138,7 @@ dependencies = [
  "dma-driver",
  "doe-mbox-driver",
  "doe-transport",
+ "flash-ctrl-emulator",
  "flash-driver",
  "i3c-driver",
  "kernel",
@@ -3208,6 +3223,7 @@ dependencies = [
  "capsules-runtime",
  "capsules-system",
  "components",
+ "flash-driver",
  "i3c-driver",
  "kernel",
  "mcu-config",
@@ -4618,6 +4634,7 @@ dependencies = [
  "pldm-ua",
  "random-port",
  "registers-generated",
+ "romtime",
  "sha2",
  "simple_logger",
  "tempfile",

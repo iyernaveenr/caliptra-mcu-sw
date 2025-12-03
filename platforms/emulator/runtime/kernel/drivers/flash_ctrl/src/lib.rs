@@ -1,5 +1,7 @@
 // Licensed under the Apache-2.0 license
 
+#![cfg_attr(target_arch = "riscv32", no_std)]
+
 // Flash controller driver for the dummy flash controller in the emulator.
 
 use core::ops::{Index, IndexMut};

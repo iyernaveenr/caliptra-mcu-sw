@@ -25,6 +25,9 @@ pub use board::*;
 #[cfg(target_arch = "riscv32")]
 mod tests;
 
+#[cfg(target_arch = "riscv32")]
+mod mm_flash_ctrl;
+
 use mcu_config::McuMemoryMap;
 
 // re-export this so the common runtime code can use it

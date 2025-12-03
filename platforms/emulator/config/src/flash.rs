@@ -1,6 +1,7 @@
 // Licensed under the Apache-2.0 license
 use core::mem::offset_of;
 use mcu_config::boot::{PartitionId, PartitionStatus, RollbackEnable};
+use mcu_config::flash::FlashPartition;
 use zerocopy::{FromBytes, Immutable, IntoBytes};
 
 pub const FLASH_PARTITIONS_COUNT: usize = 4; // Number of flash partitions
@@ -8,6 +9,9 @@ pub const FLASH_PARTITIONS_COUNT: usize = 4; // Number of flash partitions
 // Allocate driver numbers for flash partitions
 pub const DRIVER_NUM_START: usize = 0x7000_0006; // Base driver number for flash partitions
 pub const DRIVER_NUM_END: usize = 0x7000_0009; // End driver number for flash partitions
+
+// Move to FPGA config:
+// pub const DRIVER_NUM_MM_FLASH_CTRL: usize = 0x8000_0012; // Driver number for mcu mailbox based flash controller
 
 pub const BLOCK_SIZE: usize = 64 * 1024; // Block size for flash partitions
 
@@ -39,6 +43,14 @@ pub const STAGING_PARTITION: FlashPartition = FlashPartition {
     driver_num: 0x7000_0009,
 };
 
+/* Move to FPGA config:
+pub const STAGING_PARTITION: FlashPartition = FlashPartition {
+    name: "staging_par",
+    offset: 0x0000_0000,
+    size: (BLOCK_SIZE * 0x200),
+    driver_num: DRIVER_NUM_MM_FLASH_CTRL as u32,
+}; */
+
 #[macro_export]
 macro_rules! flash_partition_list_primary {
     ($macro:ident) => {{
@@ -55,6 +67,16 @@ macro_rules! flash_partition_list_secondary {
     }};
 }
 
+/* Move to fpga config */
+/*
+#[macro_export]
+macro_rules! flash_partition_list_mm_flash_ctrl {
+    ($macro:ident) => {{
+        $macro!(0, staging_par, STAGING_PARTITION);
+    }};
+} */
+
+/* Move to common config flash
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FlashDeviceConfig {
     pub partitions: &'static [&'static FlashPartition], // partitions on the flash device
@@ -66,7 +88,7 @@ pub struct FlashPartition {
     pub offset: usize,      // flash partition offset in bytes
     pub size: usize,        // size in bytes
     pub driver_num: u32,    // driver number for the partition
-}
+} */
 
 #[derive(Debug, Clone, FromBytes, IntoBytes, Immutable, PartialEq, Default)]
 #[repr(C, packed)]
