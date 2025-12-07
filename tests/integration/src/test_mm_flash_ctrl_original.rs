@@ -1,0 +1,59 @@
+//! Licensed under the Apache-2.0 license
+
+//! This module tests the PLDM Firmware Update
+
+#[cfg(feature = "fpga_realtime")]
+#[cfg(test)]
+pub mod test {
+    use std::thread;
+
+    use crate::test::{finish_runtime_hw_model, start_runtime_hw_model, TEST_LOCK};
+
+    use chrono::Duration as ChronoDuration;
+    use mcu_hw_model::{mm_flash_ctrl::ImaginaryFlashController, McuHwModel};
+    use registers_generated::mci;
+    use romtime::StaticRef;
+    use std::time::Duration;
+
+    #[test]
+    pub fn test_imaginary_flash_controller() {
+        let feature = "test-mm-flash-ctrl";
+        let lock = TEST_LOCK.lock().unwrap();
+        lock.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let feature = feature.replace("_", "-");
+        let mut hw = start_runtime_hw_model(Some(&feature), Some(65534));
+
+        hw.start_i3c_controller();
+
+        let mci_ptr = hw.base.mmio.mci().unwrap().ptr as u64;
+        // model.mmio.mci().unwrap().ptr
+
+        thread::spawn(move || {
+            // wait for runtime start
+            wait_for_runtime_start();
+            if !MCU_RUNNING.load(Ordering::Relaxed) {
+                exit(-1);
+            }
+            let mci_base = unsafe { StaticRef::new(mci_ptr as *const mci::regs::Mci) };
+
+            let flash_controller = ImaginaryFlashController::new(
+                mci_base,
+                Some(std::path::PathBuf::from("imaginary_flash.bin")),
+                None,
+            );
+            println!("[xs debug]FPGA: MCU_MBOX_FLASH_CTRL Thread Starting: ");
+            loop {
+                flash_controller.poll_mailbox_and_process();
+                thread::sleep(Duration::from_millis(1));
+            }
+        });
+
+        let test = finish_runtime_hw_model(&mut hw);
+
+        assert_eq!(0, test);
+        //  Thread clearance
+
+        // force the compiler to keep the lock
+        lock.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    }
+}

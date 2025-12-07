@@ -59,6 +59,7 @@ pub struct ModelFpgaRealtime {
     i3c_next_private_read_len: Option<u16>,
     // queue of IBIs to handle, in order
     pending_ibi: VecDeque<u16>,
+    imaginary_flash_file: Arc<Mutex<File>>, // New field for imaginary flash controller file
 }
 
 impl ModelFpgaRealtime {
@@ -238,12 +239,18 @@ impl ModelFpgaRealtime {
             self.i3c_next_private_read_len = Some(len);
         }
     }
+
+    pub fn get_imaginary_flash_file(&self) -> Arc<Mutex<File>> {
+        self.imaginary_flash_file.clone()
+    }
 }
 
 impl McuHwModel for ModelFpgaRealtime {
     fn step(&mut self) {
         self.base.step();
         self.handle_i3c();
+        // XSUN: process imaginary flash controller I/O
+        self.imaginary_flash_ctrl_process_io(self.get_imaginary_flash_file());
         update_ticks(self.cycle_count() / 100); // notify tests about current time, but reduce effective speed
     }
 
@@ -354,6 +361,14 @@ impl McuHwModel for ModelFpgaRealtime {
             i3c_tx,
             i3c_next_private_read_len: None,
             pending_ibi: VecDeque::new(),
+            // Create an Arc<Mutex<File>> for imaginary flash controller with initial content if provided
+            imaginary_flash_file: Arc::new(Mutex::new(
+                crate::flash_utils::create_and_init_flash_file(
+                    None, // Use None or a default path if needed
+                    crate::flash_utils::NUM_PAGES * crate::flash_utils::PAGE_SIZE,
+                    params.imaginary_flash_initial_contents.as_deref(),
+                )?,
+            )),
         };
 
         Ok(m)

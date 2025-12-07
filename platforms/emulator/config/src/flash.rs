@@ -11,7 +11,7 @@ pub const DRIVER_NUM_START: usize = 0x7000_0006; // Base driver number for flash
 pub const DRIVER_NUM_END: usize = 0x7000_0009; // End driver number for flash partitions
 
 // Move to FPGA config:
-// pub const DRIVER_NUM_MM_FLASH_CTRL: usize = 0x8000_0012; // Driver number for mcu mailbox based flash controller
+pub const DRIVER_NUM_MM_FLASH_CTRL: usize = 0x8000_0012; // Driver number for mcu mailbox based flash controller
 
 pub const BLOCK_SIZE: usize = 64 * 1024; // Block size for flash partitions
 
@@ -43,13 +43,13 @@ pub const STAGING_PARTITION: FlashPartition = FlashPartition {
     driver_num: 0x7000_0009,
 };
 
-/* Move to FPGA config:
-pub const STAGING_PARTITION: FlashPartition = FlashPartition {
+//Move to FPGA config:
+pub const STAGING_PARTITION_DUMMY_MM_FLASH_CTRL: FlashPartition = FlashPartition {
     name: "staging_par",
     offset: 0x0000_0000,
     size: (BLOCK_SIZE * 0x200),
     driver_num: DRIVER_NUM_MM_FLASH_CTRL as u32,
-}; */
+};
 
 #[macro_export]
 macro_rules! flash_partition_list_primary {
@@ -68,13 +68,12 @@ macro_rules! flash_partition_list_secondary {
 }
 
 /* Move to fpga config */
-/*
 #[macro_export]
 macro_rules! flash_partition_list_mm_flash_ctrl {
     ($macro:ident) => {{
-        $macro!(0, staging_par, STAGING_PARTITION);
+        $macro!(0, staging_par, STAGING_PARTITION_DUMMY_MM_FLASH_CTRL);
     }};
-} */
+}
 
 /* Move to common config flash
 #[derive(Debug, Clone, PartialEq, Eq)]

@@ -46,8 +46,12 @@ use mcu_components::instantiate_flash_partitions;
 // use mcu_config_emulator::flash_partition_list_mm_flash_ctrl;
 use mcu_config_emulator::flash::{
     IMAGE_A_PARTITION, IMAGE_B_PARTITION, PARTITION_TABLE, STAGING_PARTITION,
+    STAGING_PARTITION_DUMMY_MM_FLASH_CTRL,
 };
-use mcu_config_emulator::{flash_partition_list_primary, flash_partition_list_secondary};
+use mcu_config_emulator::{
+    flash_partition_list_mm_flash_ctrl, flash_partition_list_primary,
+    flash_partition_list_secondary,
+};
 
 // These symbols are defined in the linker script.
 extern "C" {
@@ -144,7 +148,7 @@ struct VeeR {
     >,
     flash_partitions: [Option<&'static FlashPartition<'static>>;
         mcu_config_emulator::flash::FLASH_PARTITIONS_COUNT],
-    // staging_partition: [Option<&'static FlashPartition<'static>>; 1], // XS: for staging partition on mm flash ctrl
+    staging_partition_mm_flash_ctrl: [Option<&'static FlashPartition<'static>>; 1], // XS: for staging partition on mm flash ctrl
     mailbox: &'static capsules_runtime::mailbox::Mailbox<
         'static,
         VirtualMuxAlarm<'static, InternalTimers<'static>>,
@@ -194,10 +198,10 @@ impl SyscallDriverLookup for VeeR {
                 }
                 return f(None);
             }
-            /*
+
             // XS: for staging partition on mm flash ctrl
-             mcu_config_emulator::flash::DRIVER_NUM_MM_FLASH_CTRL => {
-               if let Some(partition) = self.staging_partition[0] {
+            mcu_config_emulator::flash::DRIVER_NUM_MM_FLASH_CTRL => {
+                if let Some(partition) = self.staging_partition_mm_flash_ctrl[0] {
                     if partition.get_driver_num() == driver_num {
                         return f(Some(partition));
                     } else {
@@ -205,7 +209,7 @@ impl SyscallDriverLookup for VeeR {
                     }
                 }
                 return f(None);
-            } */
+            }
             capsules_emulator::logging::driver::LOGGING_FLASH_DRIVER_NUM => {
                 f(Some(self.logging_flash))
             }
@@ -646,24 +650,22 @@ pub unsafe fn main() {
         flash_driver::flash_ctrl::EmulatedFlashCtrl
     );
 
-    /*
     // XS: Create a mux for MCU Mailbox based flash controller
     let mux_mcu_mbox_flash =
         components::flash::FlashMuxComponent::new(&chip.peripherals.mm_flash_ctrl).finalize(
             components::flash_mux_component_static!(flash_driver::mm_flash_ctrl::MailboxFlashCtrl),
         );
 
-    let mut staging_partition: [Option<&'static FlashPartition<'static>>; 1] = [None; 1];
+    let mut staging_partition_mm_flash_ctrl: [Option<&'static FlashPartition<'static>>; 1] =
+        [None; 1];
     instantiate_flash_partitions!(
         flash_partition_list_mm_flash_ctrl,
-        staging_partition,
+        staging_partition_mm_flash_ctrl,
         board_kernel,
         mux_mcu_mbox_flash,
         flash_driver::mm_flash_ctrl::MailboxFlashCtrl
     );
-
-    romtime::println!("[xs debug]Initialized staging partition on MM Flash Ctrl");
-    */
+    romtime::println!("[xs debug]emulator: Initialized staging partition on MM Flash Ctrl");
 
     // Create flash user for logging capsule that is connected to the primary flash
     let logging_fl_user = components::flash::FlashUserComponent::new(mux_primary_flash).finalize(
@@ -744,7 +746,7 @@ pub unsafe fn main() {
             // mctp_caliptra,
             doe_spdm,
             flash_partitions,
-            //     staging_partition, // XS: for staging partition on mm flash ctrl
+            staging_partition_mm_flash_ctrl, // XS: for staging partition on mm flash ctrl
             mailbox,
             dma,
             logging_flash,

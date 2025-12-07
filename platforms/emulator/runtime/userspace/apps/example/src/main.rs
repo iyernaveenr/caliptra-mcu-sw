@@ -314,8 +314,6 @@ pub(crate) async fn async_main<S: Syscalls>() {
         .unwrap();
         System::exit(0);
     }
-
-    writeln!(console_writer, "[xs debug]example_app finished").unwrap();
 }
 
 #[allow(dead_code)]

@@ -2,17 +2,13 @@
 
 //! This module tests the PLDM Firmware Update
 
-#[cfg(feature = "fpga_realtime")]
 #[cfg(test)]
 pub mod test {
     use std::thread;
 
-    use crate::test::{finish_runtime_hw_model, start_runtime_hw_model, TEST_LOCK};
-
-    use chrono::Duration as ChronoDuration;
-    use mcu_hw_model::{mm_flash_ctrl::ImaginaryFlashController, McuHwModel};
-    use registers_generated::mci;
-    use romtime::StaticRef;
+    use crate::test::{finish_runtime_hw_model, start_runtime_hw_model, TestParams, TEST_LOCK};
+    use mcu_hw_model::McuHwModel;
+    use random_port::PortPicker;
     use std::time::Duration;
 
     #[test]
@@ -20,33 +16,18 @@ pub mod test {
         let feature = "test-mm-flash-ctrl";
         let lock = TEST_LOCK.lock().unwrap();
         lock.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+
         let feature = feature.replace("_", "-");
-        let mut hw = start_runtime_hw_model(Some(&feature), Some(65534));
+        let mut hw = start_runtime_hw_model(TestParams {
+            feature: Some(&feature),
+            i3c_port: Some(PortPicker::new().pick().unwrap()),
+            imaginary_flash_file_path: Some(std::path::PathBuf::from("imaginary_flash_test.bin")),
+            ..Default::default()
+        });
 
         hw.start_i3c_controller();
 
-        let mci_ptr = hw.base.mmio.mci().unwrap().ptr as u64;
-        // model.mmio.mci().unwrap().ptr
-
-        thread::spawn(move || {
-            // wait for runtime start
-            //wait_for_runtime_start();
-            //if !MCU_RUNNING.load(Ordering::Relaxed) {
-            //    exit(-1);
-            // }
-            let mci_base = unsafe { StaticRef::new(mci_ptr as *const mci::regs::Mci) };
-
-            let flash_controller = ImaginaryFlashController::new(
-                mci_base,
-                Some(std::path::PathBuf::from("imaginary_flash.bin")),
-                None,
-            );
-            println!("[xs debug]FPGA: MCU_MBOX_FLASH_CTRL Thread Starting: ");
-            loop {
-                flash_controller.poll_mailbox_and_process();
-                thread::sleep(Duration::from_millis(1));
-            }
-        });
+        // let flash_file = hw.get_imaginary_flash_file();
 
         let test = finish_runtime_hw_model(&mut hw);
 

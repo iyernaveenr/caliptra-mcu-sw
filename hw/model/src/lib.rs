@@ -20,11 +20,19 @@ use mcu_rom_common::{
 pub use model_emulated::ModelEmulated;
 use rand::{rngs::StdRng, SeedableRng};
 use sha2::Digest;
-use std::io::{stdout, ErrorKind};
+use std::cell::RefCell;
+use std::fs::File;
+use std::io::{stdout, ErrorKind, Read, Seek, Write};
 use std::path::{Path, PathBuf};
+use std::rc::Rc;
 use std::str::FromStr;
 use std::sync::mpsc;
+use std::sync::{Arc, Mutex};
 pub use vmem::read_otp_vmem_data;
+
+
+// XS: temporaly added imports
+use crate::flash_utils::{FlashOp, NUM_PAGES, PAGE_SIZE};
 
 mod bus_logger;
 #[cfg(feature = "fpga_realtime")]
@@ -35,13 +43,14 @@ pub mod jtag;
 #[cfg(feature = "fpga_realtime")]
 pub mod lcc;
 mod mcu_mgr;
-#[cfg(feature = "fpga_realtime")]
-pub mod mm_flash_ctrl;
+// pub mod mm_flash_ctrl;
 mod model_emulated;
 #[cfg(feature = "fpga_realtime")]
 mod model_fpga_realtime;
 mod otp_provision;
 mod vmem;
+
+mod flash_utils;
 
 pub enum ShaAccMode {
     Sha384Stream,
@@ -207,6 +216,12 @@ pub struct InitParams<'a> {
     /// Initial contents of DOT flash.
     pub dot_flash_initial_contents: Option<Vec<u8>>,
 
+    /// Initial contents of imaginary flash controller.
+    pub imaginary_flash_file_path: Option<PathBuf>,
+
+    /// Initial contents of imaginary flash controller.
+    pub imaginary_flash_initial_contents: Option<&'a [u8]>,
+
     pub check_booted_to_runtime: bool,
 }
 
@@ -274,6 +289,8 @@ impl Default for InitParams<'_> {
             vendor_pqc_type: None,
             i3c_port: None,
             dot_flash_initial_contents: None,
+            imaginary_flash_file_path: None,
+            imaginary_flash_initial_contents: None,
             check_booted_to_runtime: true,
         }
     }
@@ -388,7 +405,10 @@ pub trait McuHwModel {
                 w.write_all(self.output().take(usize::MAX).as_bytes())?;
             }
             match self.output().exit_status().or(self.exit_status()) {
-                Some(ExitStatus::Passed) => return Ok(()),
+                Some(ExitStatus::Passed) => {
+                    println!("[xs debug] Firmware exited with success");
+                    return Ok(())
+                }
                 Some(ExitStatus::Failed) => {
                     return Err(std::io::Error::new(
                         ErrorKind::Other,
@@ -615,6 +635,106 @@ pub trait McuHwModel {
     }
 
     fn warm_reset(&mut self);
+
+    fn imaginary_flash_ctrl_process_io(&mut self, flash_file: Arc<Mutex<File>>) {
+        // Create a dummy flash controller that immediately responds to commands. The backend storage is a file.
+        // Use mcu_mbox0 as the interface to control the flash controller.
+
+        // Check if there is a pending command in the mailbox
+        // println!("[xs debug]imginary_flash_ctrl_process_io: Checking for pending IO");
+        let io_pending = self.mcu_manager().mbox0().mbox_execute().read().execute();
+
+        if !io_pending {
+            return;
+        }
+
+        let cmd = self.mcu_manager().mbox0().mbox_cmd().read();
+        // Read page number and size from SRAM offsets 0 and 1
+        let page_num = self.mcu_manager().mbox0().mbox_sram().at(0).read();
+        let page_size_reg = self.mcu_manager().mbox0().mbox_sram().at(1).read();
+        let op = FlashOp::from(cmd);
+
+        // Process the command
+        let status_field = match op {
+            FlashOp::Read => {
+                if page_num < NUM_PAGES as u32 && page_size_reg as usize == PAGE_SIZE {
+                    let mut page_buf = vec![0u8; PAGE_SIZE];
+                    let io_res = {
+                        let mut file = flash_file.lock().unwrap();
+                        file.seek(std::io::SeekFrom::Start(page_num as u64 * PAGE_SIZE as u64))
+                            .and_then(|_| file.read_exact(&mut page_buf))
+                    };
+                    if io_res.is_ok() {
+                        for (i, chunk) in page_buf.chunks(4).enumerate() {
+                            let word = chunk
+                                .iter()
+                                .enumerate()
+                                .fold(0u32, |acc, (j, &b)| acc | ((b as u32) << (j * 8)));
+                            self.mcu_manager().mbox0().mbox_sram().at(i).write(|_| word);
+                        }
+                        self.mcu_manager()
+                            .mbox0()
+                            .mbox_dlen()
+                            .write(|_| PAGE_SIZE as u32);
+                        MboxStatusE::CmdComplete
+                    } else {
+                        MboxStatusE::CmdFailure
+                    }
+                } else {
+                    MboxStatusE::CmdFailure
+                }
+            }
+            FlashOp::Write => {
+                if page_num < NUM_PAGES as u32 && page_size_reg as usize == PAGE_SIZE {
+                    let mut page_buf = vec![0u8; PAGE_SIZE];
+                    for i in 0..(PAGE_SIZE / 4) {
+                        let word = self.mcu_manager().mbox0().mbox_sram().at(2 + i).read();
+                        for j in 0..4 {
+                            page_buf[i * 4 + j] = ((word >> (j * 8)) & 0xff) as u8;
+                        }
+                    }
+                    let io_res = {
+                        let mut file = flash_file.lock().unwrap();
+                        file.seek(std::io::SeekFrom::Start(page_num as u64 * PAGE_SIZE as u64))
+                            .and_then(|_| file.write_all(&page_buf))
+                    };
+                    if io_res.is_ok() {
+                        MboxStatusE::CmdComplete
+                    } else {
+                        MboxStatusE::CmdFailure
+                    }
+                } else {
+                    MboxStatusE::CmdFailure
+                }
+            }
+            FlashOp::Erase => {
+                if page_num < NUM_PAGES as u32 && page_size_reg as usize == PAGE_SIZE {
+                    let erase_buf = vec![0xFFu8; PAGE_SIZE];
+                    let io_res = {
+                        let mut file = flash_file.lock().unwrap();
+                        file.seek(std::io::SeekFrom::Start(page_num as u64 * PAGE_SIZE as u64))
+                            .and_then(|_| file.write_all(&erase_buf))
+                    };
+                    if io_res.is_ok() {
+                        MboxStatusE::CmdComplete
+                    } else {
+                        MboxStatusE::CmdFailure
+                    }
+                } else {
+                    MboxStatusE::CmdFailure
+                }
+            }
+            FlashOp::Unknown => MboxStatusE::CmdFailure,
+        };
+
+        // Update the target status register with status_field and done bit
+        self.mcu_manager()
+            .mbox0()
+            .mbox_target_status()
+            .write(|w| w.status(|_| status_field).done(true));
+
+       // println!("[xs debug]dummy_flash_ctrl_process_io: cmd=0x{cmd:08x}, op={:?}, page_num={}, page_size={}, status = {}", op, page_num, page_size_reg, status_field as u32);
+    }
 }
 
 #[ignore]

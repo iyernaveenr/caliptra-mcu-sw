@@ -44,6 +44,8 @@ mod test {
         pub feature: Option<&'a str>,
         pub i3c_port: Option<u16>,
         pub dot_flash_initial_contents: Option<Vec<u8>>,
+        pub imaginary_flash_file_path: Option<PathBuf>,
+        pub imaginary_flash_initial_contents: Option<&'a [u8]>,
         pub rom_only: bool,
     }
 
@@ -137,6 +139,10 @@ mod test {
         feature: Option<&str>,
         binaries: &'static FirmwareBinaries,
     ) -> TestBinaries {
+        println!(
+            "[xs debug]Using prebuilt firmware binaries, feature: {:?}",
+            feature
+        );
         let mut test_binaries = TestBinaries {
             vendor_pk_hash_u8: binaries
                 .vendor_pk_hash()
@@ -163,7 +169,8 @@ mod test {
     }
 
     fn build_test_binaries(feature: Option<&str>) -> TestBinaries {
-        let mcu_runtime = compile_runtime(feature, false);
+        // XS: temporarily build example_app for the test. Then we can pass parameter to choose later.
+        let mcu_runtime = compile_runtime(feature, true);
         let mut builder = CaliptraBuilder::new(
             cfg!(feature = "fpga_realtime"),
             None,
@@ -257,6 +264,8 @@ mod test {
                 i3c_port: params.i3c_port,
                 enable_mcu_uart_log: true,
                 dot_flash_initial_contents: params.dot_flash_initial_contents,
+                imaginary_flash_file_path: params.imaginary_flash_file_path,
+                imaginary_flash_initial_contents: params.imaginary_flash_initial_contents,
                 check_booted_to_runtime: !params.rom_only,
                 ..Default::default()
             },

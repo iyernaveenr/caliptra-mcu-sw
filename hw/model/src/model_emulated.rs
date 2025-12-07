@@ -54,13 +54,16 @@ use semver::Version;
 use std::cell::Cell;
 use std::cell::RefCell;
 use std::collections::hash_map::DefaultHasher;
+use std::fs::File;
 use std::hash::Hasher;
+use std::io::Seek;
 use std::io::Write;
 use std::path::Path;
 use std::path::PathBuf;
 use std::rc::Rc;
 use std::sync::atomic::Ordering;
 use std::sync::mpsc;
+use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
 
 const DEFAULT_AXI_PAUSER: u32 = 0xaaaa_aaaa;
@@ -91,6 +94,7 @@ pub struct ModelEmulated {
     i3c_address: Option<u8>,
     i3c_controller_join_handle: Option<JoinHandle<()>>,
     dot_flash: Rc<RefCell<Ram>>,
+    imaginary_flash_file: Arc<Mutex<File>>, // New field for imaginary flash controller file
     check_booted_to_runtime: bool,
 }
 
@@ -411,6 +415,14 @@ impl McuHwModel for ModelEmulated {
             i3c_controller_join_handle: None,
             dot_flash,
             check_booted_to_runtime: params.check_booted_to_runtime,
+            // Create a temporary file for imaginary flash controller with initial content if provided
+            imaginary_flash_file: Arc::new(Mutex::new(
+                crate::flash_utils::create_and_init_flash_file(
+                    params.imaginary_flash_file_path,
+                    crate::flash_utils::NUM_PAGES * crate::flash_utils::PAGE_SIZE,
+                    params.imaginary_flash_initial_contents.as_deref(),
+                )?,
+            )),
         };
         // Turn tracing on if the trace path was set
         m.tracing_hint(true);
@@ -418,6 +430,7 @@ impl McuHwModel for ModelEmulated {
             m.write_dot_flash(dot_flash_data)?;
         }
 
+        println!("[xs debug]ModelEmulated::new_unbooted: Initialized successfully");
         Ok(m)
     }
 
@@ -471,6 +484,8 @@ impl McuHwModel for ModelEmulated {
             self.caliptra_cpu
                 .step(self.caliptra_trace_fn.as_deref_mut());
             self.bmc.step();
+            // XS: Process imaginary flash controller IO
+           self.imaginary_flash_ctrl_process_io(self.get_imaginary_flash_file());
         }
         let events = self.events_from_caliptra.try_iter().collect::<Vec<_>>();
         self.collected_events_from_caliptra.extend(events);
@@ -594,6 +609,10 @@ impl McuHwModel for ModelEmulated {
 impl ModelEmulated {
     fn caliptra_axi_bus(&mut self) -> EmulatedAxiBus<'_> {
         EmulatedAxiBus { model: self }
+    }
+
+    pub fn get_imaginary_flash_file(&self) -> Arc<Mutex<File>> {
+        self.imaginary_flash_file.clone()
     }
 }
 
