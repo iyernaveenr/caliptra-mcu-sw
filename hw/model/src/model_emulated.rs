@@ -479,7 +479,7 @@ impl McuHwModel for ModelEmulated {
             mcu_testing_common::update_ticks(self.cycle_count());
         }
     }
-
+    /*
     fn exit_status(&self) -> Option<ExitStatus> {
         // tests trigger success by stopping the emulator
         if !MCU_RUNNING.load(Ordering::Relaxed) {
@@ -487,7 +487,7 @@ impl McuHwModel for ModelEmulated {
         } else {
             None
         }
-    }
+    } */
 
     fn output(&mut self) -> &mut Output {
         // In case the caller wants to log something, make sure the log has the

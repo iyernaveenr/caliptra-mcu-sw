@@ -261,6 +261,7 @@ caliptra-test-harness-types = { git = "https://github.com/chipsalliance/caliptra
 ureg = { git = "https://github.com/chipsalliance/caliptra-sw", rev = "b9b6fe35f02e16209ead07b55e82f951085364a6" }
 dpe = { git = "https://github.com/chipsalliance/caliptra-sw", rev = "b9b6fe35f02e16209ead07b55e82f951085364a6", default-features = false, features = ["dpe_profile_p384_sha384"] }
 
+
 # local caliptra dependency; useful when developing
 # caliptra-api = { path = "../caliptra-sw/api" }
 # caliptra-api-types = { path = "../caliptra-sw/api/types" }
@@ -308,7 +309,6 @@ tock-registers = { git = "https://github.com/tock/tock.git", rev = "release-2.2"
 # riscv-csr = { path = "../tock/libraries/riscv-csr" }
 # rv32i = { path = "../tock/arch/rv32i" }
 # tock-registers = { path = "../tock/libraries/tock-register-interface" }
-
 
 
 # Always optimize the emulator during tests, as it is a major bottleneck for

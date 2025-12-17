@@ -23,8 +23,12 @@ use sha2::Digest;
 use std::io::{stdout, ErrorKind};
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
+use std::sync::atomic::Ordering;
 use std::sync::mpsc;
 pub use vmem::read_otp_vmem_data;
+
+// Global flag to indicate if MCU is running
+use mcu_testing_common::MCU_RUNNING;
 
 mod bus_logger;
 #[cfg(feature = "fpga_realtime")]
@@ -42,6 +46,9 @@ mod model_emulated;
 mod model_fpga_realtime;
 mod otp_provision;
 mod vmem;
+
+//XS: added this module for mcu mailbox transport
+pub mod mcu_mbox_transport;
 
 pub enum ShaAccMode {
     Sha384Stream,
@@ -376,7 +383,12 @@ pub trait McuHwModel {
     fn i3c_port(&self) -> Option<u16>;
 
     fn exit_status(&self) -> Option<ExitStatus> {
-        None
+        // tests trigger success by stopping the emulator
+        if !MCU_RUNNING.load(Ordering::Relaxed) {
+            Some(ExitStatus::Passed)
+        } else {
+            None
+        }
     }
 
     fn copy_output_until_exit_success(
