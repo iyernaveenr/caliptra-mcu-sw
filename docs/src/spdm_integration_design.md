@@ -1,6 +1,6 @@
 # Caliptra Utility Host Library and libSPDM integration
 
-https://github.com/DMTF/libspdm/tree/main/doc
+https://github.com/ccc-spdm-tools/spdm-rs
 
 
 
@@ -14,44 +14,32 @@ graph TB
             Commands[SPDM API]
         end
         
-        subgraph "SPDM Implementation"
-            Wrapper[libspdm Rust Wrapper]
-        end
-        
         subgraph "Transport Layer"
             MCTP[MCTP Transport]
-            UDP[UDP Transport]
-            Mailbox[Mailbox Transport]
         end
         
         subgraph "Session Management"
             Session[Session Manager]
-            Security[Security Context]
         end
     end
     
     subgraph "External Dependencies"
-        libspdm[DMTF libspdm Library]
+        libspdm[libspdm-rs Library]
         OpenSSL[OpenSSL/Crypto Library]
     end
     
     subgraph "Target Devices"
         Caliptra[Caliptra Device]
-        BMC[BMC]
-        Other[Other SPDM Devices]
     end
     
     API <--> Commands
-    Commands <--> Wrapper
+    Commands <--> libspdm
     Commands <--> Session
-    Wrapper <--> libspdm
     Session <--> MCTP
     MCTP <--> Caliptra
-    MCTP <--> BMC
-    UDP <--> Other
-    Mailbox <--> Caliptra
     
     libspdm <--> OpenSSL
+    libspdm <--> MCTP
 ```
 
 ## Component Design
@@ -177,42 +165,7 @@ pub struct ChallengeCommand { slot_id: u8, nonce: [u8; 32] }
 pub struct GetMeasurementsCommand { slot_id: u8, operation: MeasurementOperation }
 pub struct KeyExchangeCommand { dhe_named_group: u16, opaque_data: Vec<u8> }
 ```
-
-### 2. libspdm Rust Wrapper
-
-#### FFI Bindings
-```rust
-// Auto-generated or manually crafted FFI bindings
-extern "C" {
-    fn libspdm_init_context(context: *mut libspdm_context_t) -> libspdm_return_t;
-    fn libspdm_register_device_io_func(
-        context: *mut libspdm_context_t,
-        send_message: extern "C" fn(*mut c_void, usize, *const u8, u64) -> libspdm_return_t,
-        receive_message: extern "C" fn(*mut c_void, *mut usize, *mut u8, u64) -> libspdm_return_t,
-    ) -> libspdm_return_t;
-    // ... other libspdm functions
-}
-```
-
-#### Safe Wrapper
-```rust
-pub struct LibSpdmContext {
-    inner: NonNull<libspdm_context_t>,
-    _phantom: PhantomData<libspdm_context_t>,
-}
-
-impl LibSpdmContext {
-    pub fn new() -> Result<Self, SpdmError>;
-    pub fn register_io_functions<T: SpdmTransport>(&mut self, transport: &T) -> Result<(), SpdmError>;
-    pub fn get_version(&mut self) -> Result<SpdmVersion, SpdmError>;
-    // ... other wrapped functions
-}
-
-unsafe impl Send for LibSpdmContext {}
-unsafe impl Sync for LibSpdmContext {}
-```
-
-### 3. Transport Layer Integration
+### 2. Transport Layer Integration
 
 #### SPDM Transport Trait
 ```rust
