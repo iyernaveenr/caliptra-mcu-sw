@@ -20,7 +20,6 @@ emulator-consts.workspace = true
 emulator-registers-generated.workspace = true
 lazy_static.workspace = true
 mcu-testing-common.workspace = true
-network-config.workspace = true
 num_enum.workspace = true
 registers-generated.workspace = true
 semver.workspace = true
@@ -28,9 +27,6 @@ serde_json.workspace = true
 serde.workspace = true
 tock-registers.workspace = true
 zerocopy.workspace = true
-
-[target.'cfg(target_os = "linux")'.dependencies]
-libc.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true

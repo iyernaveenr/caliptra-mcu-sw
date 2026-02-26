@@ -159,10 +159,8 @@ pub struct FirmwareBinaries {
     pub caliptra_fw: Vec<u8>,
     pub mcu_rom: Vec<u8>,
     pub mcu_runtime: Vec<u8>,
-    pub network_rom: Vec<u8>,
     pub soc_manifest: Vec<u8>,
     pub test_roms: Vec<(String, Vec<u8>)>,
-    pub test_network_roms: Vec<(String, Vec<u8>)>,
     pub caliptra_test_roms: Vec<(String, Vec<u8>)>,
     pub test_soc_manifests: Vec<(String, Vec<u8>)>,
     pub test_runtimes: Vec<(String, Vec<u8>)>,
@@ -177,7 +175,6 @@ impl FirmwareBinaries {
     const CALIPTRA_FW_NAME: &'static str = "caliptra_fw.bin";
     const MCU_ROM_NAME: &'static str = "mcu_rom.bin";
     const MCU_RUNTIME_NAME: &'static str = "mcu_runtime.bin";
-    const NETWORK_ROM_NAME: &'static str = "network_rom.bin";
     const SOC_MANIFEST_NAME: &'static str = "soc_manifest.bin";
     const FLASH_IMAGE_NAME: &'static str = "flash_image.bin";
     const PLDM_FW_PKG_NAME: &'static str = "pldm_fw_pkg.bin";
@@ -217,7 +214,6 @@ impl FirmwareBinaries {
                 Self::CALIPTRA_FW_NAME => binaries.caliptra_fw = data,
                 Self::MCU_ROM_NAME => binaries.mcu_rom = data,
                 Self::MCU_RUNTIME_NAME => binaries.mcu_runtime = data,
-                Self::NETWORK_ROM_NAME => binaries.network_rom = data,
                 Self::SOC_MANIFEST_NAME => binaries.soc_manifest = data,
                 name if name.contains("mcu-test-soc-manifest") => {
                     binaries.test_soc_manifests.push((name.to_string(), data));
@@ -241,9 +237,6 @@ impl FirmwareBinaries {
                 }
                 name if name.contains("mcu-test-flash-image") => {
                     binaries.test_flash_images.push((name.to_string(), data));
-                }
-                name if name.contains("network-rom-feature-") => {
-                    binaries.test_network_roms.push((name.to_string(), data));
                 }
                 _ => continue,
             }
@@ -370,18 +363,6 @@ impl FirmwareBinaries {
         }
         self.mcu_rom.clone()
     }
-
-    /// Get a feature-specific Network ROM. Falls back to the generic Network ROM
-    /// if no feature-specific ROM was built.
-    pub fn test_feature_network_rom(&self, feature: &str) -> Vec<u8> {
-        let expected_name = format!("network-rom-feature-{}.bin", feature);
-        for (name, data) in self.test_network_roms.iter() {
-            if &expected_name == name {
-                return data.clone();
-            }
-        }
-        self.network_rom.clone()
-    }
 }
 
 /// Prebuilt emulator binaries stored in a separate ZIP file (emulators.zip).
@@ -450,7 +431,6 @@ pub struct AllBuildArgs<'a> {
     pub output: Option<&'a str>,
     pub platform: Option<&'a str>,
     pub rom_features: Option<&'a str>,
-    pub network_rom_features: Option<&'a str>,
     pub runtime_features: Option<&'a str>,
     pub separate_runtimes: bool,
     pub soc_images: Option<Vec<ImageCfg>>,
@@ -464,7 +444,6 @@ pub fn all_build(args: AllBuildArgs) -> Result<()> {
         output,
         platform,
         rom_features,
-        network_rom_features,
         runtime_features,
         separate_runtimes,
         soc_images,
@@ -476,15 +455,6 @@ pub fn all_build(args: AllBuildArgs) -> Result<()> {
     let platform = platform.unwrap_or("emulator");
     let rom_features = rom_features.unwrap_or_default();
     let mcu_rom = crate::rom_build(Some(platform.to_string()), Some(rom_features.to_string()))?;
-
-    // Build base network ROM (without features)
-    let network_rom = crate::network_rom_build(None)?;
-
-    // Parse network ROM features as comma-separated list
-    let network_rom_feature_list: Vec<&str> = match network_rom_features {
-        Some(f) if !f.is_empty() => f.split(',').collect(),
-        _ => vec![],
-    };
 
     let mut used_filenames = std::collections::HashSet::new();
     let mut test_roms = vec![];
@@ -611,24 +581,6 @@ pub fn all_build(args: AllBuildArgs) -> Result<()> {
             Err(e) => {
                 println!(
                     "Skipping feature ROM for {}: {} (will use generic ROM)",
-                    feature, e
-                );
-            }
-        }
-    }
-
-    // Build feature-specific Network ROMs
-    let mut test_network_roms: Vec<(PathBuf, String)> = vec![];
-    for feature in network_rom_feature_list.iter() {
-        match crate::network_rom_build(Some(feature)) {
-            Ok(rom_path) => {
-                let rom_name = format!("network-rom-feature-{}.bin", feature);
-                println!("Built feature Network ROM: {} -> {}", rom_path, rom_name);
-                test_network_roms.push((PathBuf::from(rom_path), rom_name));
-            }
-            Err(e) => {
-                println!(
-                    "Skipping Network ROM for feature {}: {} (will use generic Network ROM)",
                     feature, e
                 );
             }
@@ -782,12 +734,6 @@ pub fn all_build(args: AllBuildArgs) -> Result<()> {
         options,
     )?;
     add_to_zip(
-        &PathBuf::from(network_rom),
-        FirmwareBinaries::NETWORK_ROM_NAME,
-        &mut zip,
-        options,
-    )?;
-    add_to_zip(
         &soc_manifest,
         FirmwareBinaries::SOC_MANIFEST_NAME,
         &mut zip,
@@ -807,10 +753,6 @@ pub fn all_build(args: AllBuildArgs) -> Result<()> {
     )?;
     for (test_rom, name) in test_roms {
         add_to_zip(&test_rom, &name, &mut zip, options)?;
-    }
-
-    for (network_rom_path, name) in test_network_roms {
-        add_to_zip(&network_rom_path, &name, &mut zip, options)?;
     }
 
     for (feature, runtime, soc_manifest, flash_image, pldm_fw_pkg, update_flash_image) in

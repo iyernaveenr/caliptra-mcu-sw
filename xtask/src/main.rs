@@ -18,7 +18,6 @@ mod format;
 mod fpga;
 mod fuses;
 mod header;
-mod network;
 mod pldm_fw_pkg;
 mod precheckin;
 mod registers;
@@ -148,10 +147,6 @@ enum Commands {
 
         #[arg(long)]
         rom_features: Option<String>,
-
-        /// Comma-separated list of feature flags to build Network ROMs with
-        #[arg(long)]
-        network_rom_features: Option<String>,
 
         #[arg(long)]
         runtime_features: Option<String>,
@@ -291,11 +286,6 @@ enum Commands {
         #[command(subcommand)]
         cmd: BundleCommands,
     },
-    /// Network stack development tools (TAP, DHCP/TFTP server, lwip-rs)
-    Network {
-        #[command(subcommand)]
-        cmd: network::NetworkCommands,
-    },
 }
 
 #[derive(Subcommand)]
@@ -394,7 +384,6 @@ fn main() {
             output,
             platform,
             rom_features,
-            network_rom_features,
             runtime_features,
             separate_runtimes,
             soc_images,
@@ -404,7 +393,6 @@ fn main() {
             output: output.as_deref(),
             platform: platform.as_deref(),
             rom_features: rom_features.as_deref(),
-            network_rom_features: network_rom_features.as_deref(),
             runtime_features: runtime_features.as_deref(),
             separate_runtimes: *separate_runtimes,
             soc_images: soc_images.clone(),
@@ -506,7 +494,6 @@ fn main() {
             AuthManifestCommands::Parse { file } => auth_manifest::parse(file),
         },
         Commands::FirmwareBundler { cmd } => mcu_firmware_bundler::execute(cmd.clone()),
-        Commands::Network { cmd } => network::run(cmd.clone()),
     };
     result.unwrap_or_else(|e| {
         eprintln!("Error: {:?}", e);

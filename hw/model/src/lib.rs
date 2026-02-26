@@ -27,9 +27,6 @@ use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use std::sync::atomic::Ordering;
 use std::sync::mpsc;
-use std::sync::{Arc, Mutex};
-
-use emulator_periph::TapDevice;
 use ureg::MmioMut;
 pub use vmem::read_otp_vmem_data;
 
@@ -125,12 +122,6 @@ pub struct InitParams<'a> {
     pub mcu_rom: &'a [u8],
     /// The contents of the MCU firmware
     pub mcu_firmware: &'a [u8],
-
-    /// The contents of the Network Coprocessor ROM
-    pub network_rom: &'a [u8],
-
-    /// TAP device for the Network Coprocessor Ethernet peripheral
-    pub network_tap_device: Option<Arc<Mutex<Box<dyn TapDevice>>>>,
 
     /// The initial contents of the DCCM SRAM
     pub caliptra_dccm: &'a [u8],
@@ -264,8 +255,6 @@ impl Default for InitParams<'_> {
             caliptra_firmware: Default::default(),
             mcu_rom: Default::default(),
             mcu_firmware: Default::default(),
-            network_rom: Default::default(),
-            network_tap_device: None,
             caliptra_dccm: Default::default(),
             caliptra_iccm: Default::default(),
             otp_memory: None,
@@ -652,16 +641,6 @@ pub trait McuHwModel {
 
     fn mci_fw_fatal_error(&mut self) -> Option<u32> {
         Some(self.mcu_manager().mci().fw_error_fatal().read()).filter(|&e| e != 0)
-    }
-
-    /// Returns true if the network CPU is initialized.
-    fn has_network_cpu(&self) -> bool {
-        false
-    }
-
-    /// Get the network CPU UART output, if available.
-    fn network_uart_output(&self) -> Option<String> {
-        None
     }
 
     fn warm_reset(&mut self);
