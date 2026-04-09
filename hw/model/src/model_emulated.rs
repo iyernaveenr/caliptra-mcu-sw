@@ -44,8 +44,7 @@ use mcu_testing_common::{MCU_RUNNING, MCU_RUNTIME_STARTED};
 use registers_generated::fuses;
 use romtime::McuBootMilestones;
 use semver::Version;
-use std::cell::Cell;
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::hash_map::DefaultHasher;
 use std::hash::Hasher;
 use std::io::Write;
@@ -218,9 +217,12 @@ impl McuHwModel for ModelEmulated {
 
         let lc = LcCtrl::with_state(lc_state_index, lc_transition_cnt);
 
+        let fips_zeroization_cmd = Rc::new(Cell::new(false));
+
         let otp = Otp::new(
             &clock.clone(),
             OtpArgs {
+                fips_zeroization_cmd: fips_zeroization_cmd.clone(),
                 raw_memory: Some(otp_mem),
                 vendor_pk_hash: params.vendor_pk_hash,
                 vendor_pqc_type: params.vendor_pqc_type,
@@ -336,7 +338,7 @@ impl McuHwModel for ModelEmulated {
             [0, 0]
         };
         let mci_regs = ext_mci.regs.clone();
-        let mci = Mci::new(
+        let mut mci = Mci::new(
             &clock.clone(),
             ext_mci,
             Rc::new(RefCell::new(mci_irq)),
@@ -345,6 +347,7 @@ impl McuHwModel for ModelEmulated {
             None,
             mci_generic_input_wires,
         );
+        mci.set_fips_zeroization(params.fips_zeroization_ppd, fips_zeroization_cmd.clone());
 
         let delegates: Vec<Box<dyn caliptra_emu_bus::Bus>> =
             vec![Box::new(mcu_root_bus), Box::new(soc_to_caliptra)];

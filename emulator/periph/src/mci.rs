@@ -12,6 +12,7 @@ use registers_generated::mci::bits::{
     Error0IntrT, Error0IntrTrigT, Notif0IntrEnT, Notif0IntrT, ResetReason, ResetRequest,
     SecurityState, WdtStatus, WdtTimer1Ctrl, WdtTimer1En, WdtTimer2Ctrl, WdtTimer2En,
 };
+use std::cell::Cell;
 use std::{cell::RefCell, rc::Rc};
 use tock_registers::interfaces::{ReadWriteable, Readable};
 
@@ -48,6 +49,8 @@ pub struct Mci {
     soc_regs: Option<RegisterBlock<BusMmio<SocToCaliptraBus>>>,
 
     reset_requested: bool,
+    fips_zeroization_ppd: bool,
+    fips_zeroization_cmd: Rc<Cell<bool>>,
 }
 
 impl Mci {
@@ -86,6 +89,8 @@ impl Mci {
             irq,
             mcu_mailbox0,
             reset_requested: false,
+            fips_zeroization_ppd: false,
+            fips_zeroization_cmd: Rc::new(Cell::new(false)),
 
             // --- init mtimecmp ---
             mtimecmp: default_mtimecmp,
@@ -93,6 +98,11 @@ impl Mci {
             mcu_mailbox1,
             soc_regs,
         }
+    }
+
+    pub fn set_fips_zeroization(&mut self, ppd: bool, cmd: Rc<Cell<bool>>) {
+        self.fips_zeroization_ppd = ppd;
+        self.fips_zeroization_cmd = cmd;
     }
 
     #[inline]
@@ -162,6 +172,20 @@ impl Mci {
 impl MciPeripheral for Mci {
     fn generated(&mut self) -> Option<&mut MciGenerated> {
         Some(&mut self.generated)
+    }
+
+    fn write_mci_reg_fc_fips_zerozation(&mut self, val: caliptra_emu_types::RvData) {
+        if let Some(generated) = self.generated() {
+            generated.write_mci_reg_fc_fips_zerozation(val);
+        }
+        // Emulate the AND gate: FIPS_ZEROIZATION_CMD = (&mask) & PPD
+        let mask = if let Some(generated) = self.generated() {
+            generated.read_mci_reg_fc_fips_zerozation()
+        } else {
+            0
+        };
+        let cmd = (mask == 0xFFFF_FFFF) && self.fips_zeroization_ppd;
+        self.fips_zeroization_cmd.set(cmd);
     }
 
     fn read_mci_reg_generic_input_wires(&mut self, index: usize) -> caliptra_emu_types::RvData {
@@ -1837,5 +1861,151 @@ mod tests {
         let now = clock.now();
         assert_eq!(mci.read_mci_reg_mcu_rv_mtime_l(), now as u32);
         assert_eq!(mci.read_mci_reg_mcu_rv_mtime_h(), (now >> 32) as u32);
+    }
+
+    #[test]
+    fn test_fips_zeroization_mci_to_otp() {
+        use crate::otp::{Otp, OtpArgs};
+        use emulator_registers_generated::otp::OtpPeripheral;
+        use std::cell::Cell;
+
+        let clock = Clock::new();
+        let fips_cmd = Rc::new(Cell::new(false));
+
+        let mut otp = Otp::new(
+            &clock,
+            OtpArgs {
+                fips_zeroization_cmd: fips_cmd.clone(),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+
+        // Write non-zero data to secret_manuf_partition via DAI
+        let uds_offset = registers_generated::fuses::SECRET_MANUF_PARTITION_BYTE_OFFSET as u32;
+        otp.write_dai_wdata_rf_direct_access_wdata_0(0xDEAD_BEEF);
+        otp.write_dai_wdata_rf_direct_access_wdata_1(0xCAFE_BABE);
+        otp.write_direct_access_address(uds_offset.into());
+        otp.write_direct_access_cmd(2u32.into());
+        otp.poll();
+
+        // Verify data was written
+        let parts = otp.partitions_ref();
+        assert!(
+            parts.borrow()[registers_generated::fuses::SECRET_MANUF_PARTITION_BYTE_OFFSET
+                ..registers_generated::fuses::SECRET_MANUF_PARTITION_BYTE_OFFSET + 8]
+                .iter()
+                .any(|&b| b != 0),
+            "Secret partition should have non-zero data"
+        );
+
+        // Create MCI with PPD=true
+        let ext_mci_regs = caliptra_emu_periph::mci::Mci::new(vec![]);
+        let pic = caliptra_emu_cpu::Pic::new();
+        let irq = pic.register_irq(1);
+        let mut mci = Mci::new(
+            &clock,
+            ext_mci_regs,
+            Rc::new(RefCell::new(irq)),
+            None,
+            None,
+            None,
+            [0, 0],
+        );
+        mci.set_fips_zeroization(true, fips_cmd.clone());
+
+        // Write 0xFFFF_FFFF to FC_FIPS_ZEROZATION mask register via MCI bus
+        let mut mci_bus = MciBus {
+            periph: Box::new(mci),
+        };
+        mci_bus.write(RvSize::Word, 0x318, 0xFFFF_FFFF).unwrap();
+
+        // Verify the shared signal was set
+        assert!(fips_cmd.get(), "FIPS_ZEROIZATION_CMD should be true");
+
+        // OTP should zero secret partitions on next poll
+        otp.poll();
+
+        // Verify secret partition data is zeroed
+        let p = parts.borrow();
+        assert!(
+            p[registers_generated::fuses::SECRET_MANUF_PARTITION_BYTE_OFFSET
+                ..registers_generated::fuses::SECRET_MANUF_PARTITION_BYTE_OFFSET
+                    + registers_generated::fuses::SECRET_MANUF_PARTITION_BYTE_SIZE]
+                .iter()
+                .all(|&b| b == 0),
+            "Secret manuf partition should be zeroed after FIPS zeroization"
+        );
+
+        // Verify the signal was consumed
+        assert!(
+            !fips_cmd.get(),
+            "FIPS_ZEROIZATION_CMD should be cleared after processing"
+        );
+    }
+
+    #[test]
+    fn test_fips_zeroization_ppd_false_no_zeroize() {
+        use crate::otp::{Otp, OtpArgs};
+        use emulator_registers_generated::otp::OtpPeripheral;
+        use std::cell::Cell;
+
+        let clock = Clock::new();
+        let fips_cmd = Rc::new(Cell::new(false));
+
+        let mut otp = Otp::new(
+            &clock,
+            OtpArgs {
+                fips_zeroization_cmd: fips_cmd.clone(),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+
+        // Write data to secret partition
+        let uds_offset = registers_generated::fuses::SECRET_MANUF_PARTITION_BYTE_OFFSET as u32;
+        otp.write_dai_wdata_rf_direct_access_wdata_0(0xDEAD_BEEF);
+        otp.write_dai_wdata_rf_direct_access_wdata_1(0xCAFE_BABE);
+        otp.write_direct_access_address(uds_offset.into());
+        otp.write_direct_access_cmd(2u32.into());
+        otp.poll();
+
+        // Create MCI with PPD=false
+        let ext_mci_regs = caliptra_emu_periph::mci::Mci::new(vec![]);
+        let pic = caliptra_emu_cpu::Pic::new();
+        let irq = pic.register_irq(1);
+        let mut mci = Mci::new(
+            &clock,
+            ext_mci_regs,
+            Rc::new(RefCell::new(irq)),
+            None,
+            None,
+            None,
+            [0, 0],
+        );
+        mci.set_fips_zeroization(false, fips_cmd.clone());
+
+        // Write mask even though PPD is false
+        let mut mci_bus = MciBus {
+            periph: Box::new(mci),
+        };
+        mci_bus.write(RvSize::Word, 0x318, 0xFFFF_FFFF).unwrap();
+
+        // Signal should NOT be set because PPD is false
+        assert!(
+            !fips_cmd.get(),
+            "FIPS_ZEROIZATION_CMD should be false when PPD is not asserted"
+        );
+
+        // OTP data should be preserved
+        otp.poll();
+        let parts = otp.partitions_ref();
+        assert!(
+            parts.borrow()[registers_generated::fuses::SECRET_MANUF_PARTITION_BYTE_OFFSET
+                ..registers_generated::fuses::SECRET_MANUF_PARTITION_BYTE_OFFSET + 8]
+                .iter()
+                .any(|&b| b != 0),
+            "Secret partition should NOT be zeroed when PPD is false"
+        );
     }
 }

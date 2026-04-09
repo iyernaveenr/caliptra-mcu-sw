@@ -21,7 +21,7 @@ use emulator_registers_generated::otp::OtpGenerated;
 use registers_generated::fuses::{self};
 use registers_generated::otp_ctrl::bits::{DirectAccessCmd, OtpStatus};
 use serde::{Deserialize, Serialize};
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::HashSet;
 use std::fs::File;
 use std::io::{Read, Seek};
@@ -68,6 +68,7 @@ pub struct OtpArgs {
     /// Which `err_code_rf_err_code_N` register index carries the DAI error code.
     /// Defaults to `OTP_PARTITIONS.len()` (16), matching DaiIdx in the RTL.
     pub dai_err_code_register: Option<usize>,
+    pub fips_zeroization_cmd: Rc<Cell<bool>>,
 }
 
 //#[derive(Bus)]
@@ -93,6 +94,7 @@ pub struct Otp {
     /// Per-partition ECC RAM. `ecc_rams[i]` is `Some(…)` when partition `i`
     /// has ECC protection enabled.
     ecc_rams: Vec<Option<EccRam>>,
+    fips_zeroization_cmd: Rc<Cell<bool>>,
 }
 
 // Ensure that we save the state before we drop the OTP instance.
@@ -173,6 +175,7 @@ impl Otp {
             digests: [0; fuses::OTP_PARTITIONS.len() * 2],
             generated: OtpGenerated::default(),
             ecc_rams,
+            fips_zeroization_cmd: args.fips_zeroization_cmd.clone(),
         };
         otp.read_from_file()?;
         if let Some(mut vendor_pk_hash) = args.vendor_pk_hash {
@@ -671,6 +674,19 @@ impl emulator_registers_generated::otp::OtpPeripheral for Otp {
 
     /// Called by Bus::poll() to indicate that time has passed
     fn poll(&mut self) {
+        if self.fips_zeroization_cmd.get() {
+            self.fips_zeroization_cmd.set(false);
+            let mut partitions = self.partitions.borrow_mut();
+            for p in fuses::OTP_PARTITIONS.iter() {
+                if p.name.starts_with("secret_") || p.name == "vendor_secret_prod_partition" {
+                    let end = (p.byte_offset + p.byte_size).min(partitions.len());
+                    for byte in &mut partitions[p.byte_offset..end] {
+                        *byte = 0;
+                    }
+                }
+            }
+        }
+
         if self.direct_access_cmd.reg.read(DirectAccessCmd::Wr) == 1 {
             // Clear any previous DAI error before processing a new command.
             self.set_dai_err_code(0);
@@ -1236,5 +1252,60 @@ mod test {
 
         // Original value should be preserved.
         assert_eq!(dai_read(&mut otp, addr), old_val as u32);
+    }
+
+    #[test]
+    fn test_fips_zeroization() {
+        let clock = Clock::new();
+        let fips_cmd = Rc::new(Cell::new(false));
+        let mut otp = Otp::new(
+            &clock,
+            OtpArgs {
+                fips_zeroization_cmd: fips_cmd.clone(),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+
+        // Write non-zero data to the first dword of secret_manuf_partition (UDS)
+        let uds_offset = fuses::SECRET_MANUF_PARTITION_BYTE_OFFSET as u32;
+        dai_write(&mut otp, uds_offset, 0xDEAD_BEEF);
+        assert_eq!(otp.dai_err_code(), 0);
+
+        // Verify data is there (descrambled read)
+        let val = dai_read(&mut otp, uds_offset);
+        assert_ne!(val, 0, "UDS data should be non-zero before zeroization");
+
+        // Trigger FIPS zeroization
+        fips_cmd.set(true);
+        otp.poll();
+
+        // Verify secret partition data is zeroed
+        let partitions = otp.partitions_ref();
+        let parts = partitions.borrow();
+        let uds_end =
+            fuses::SECRET_MANUF_PARTITION_BYTE_OFFSET + fuses::SECRET_MANUF_PARTITION_BYTE_SIZE;
+        assert!(
+            parts[fuses::SECRET_MANUF_PARTITION_BYTE_OFFSET..uds_end]
+                .iter()
+                .all(|&b| b == 0),
+            "UDS partition should be zeroed after FIPS zeroization"
+        );
+
+        // Verify DAI read returns zero (descrambled zero)
+        drop(parts);
+        let val = dai_read(&mut otp, uds_offset);
+        assert_eq!(val, 0, "DAI read should return zero after zeroization");
+
+        // Verify vendor_secret_prod is also zeroed
+        let parts = partitions.borrow();
+        let vsp_end = fuses::VENDOR_SECRET_PROD_PARTITION_BYTE_OFFSET
+            + fuses::VENDOR_SECRET_PROD_PARTITION_BYTE_SIZE;
+        assert!(
+            parts[fuses::VENDOR_SECRET_PROD_PARTITION_BYTE_OFFSET..vsp_end]
+                .iter()
+                .all(|&b| b == 0),
+            "Vendor secret prod partition should be zeroed"
+        );
     }
 }

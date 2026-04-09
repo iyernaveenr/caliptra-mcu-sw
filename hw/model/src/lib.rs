@@ -171,6 +171,8 @@ pub struct InitParams<'a> {
 
     pub rma_or_scrap_ppd: bool,
 
+    pub fips_zeroization_ppd: bool,
+
     pub debug_intent: bool,
 
     pub uds_program_req: bool,
@@ -278,6 +280,7 @@ impl Default for InitParams<'_> {
             // `registers/generated-firmware/src/mci.rs`.
             prod_dbg_unlock_pk_hashes_offset: 0x480,
             rma_or_scrap_ppd: false,
+            fips_zeroization_ppd: false,
             debug_intent: false,
             cptra_obf_key: DEFAULT_CPTRA_OBF_KEY,
             itrng_nibbles,
